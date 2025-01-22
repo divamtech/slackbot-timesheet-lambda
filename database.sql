@@ -4,7 +4,7 @@ CREATE DATABASE IF NOT EXISTS `timesheet_db`
   COLLATE utf8mb4_0900_ai_ci;
 
   -- Use the database
-USE `your_database_name`;
+USE `timesheet_db`;
 
 CREATE TABLE IF NOT EXISTS `users` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
