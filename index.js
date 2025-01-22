@@ -215,10 +215,13 @@ async function handleModalResponse(res, payload) {
 }
 
 async function sendUserReportsToAdmin() {
-  // const [users] = await db.query(`select * from users where is_active = true and is_admin = true`)
+  const [users] = await db.query(`select * from users where is_active = true and is_admin = true`)
 
-  // if (users.length > 0) {
-    const [row] = await db.query
+  if (users.length == 0) {
+    return
+  }
+  
+  const [row] = await db.query
     (`
       SELECT 
         timesheets.*, 
@@ -231,14 +234,14 @@ async function sendUserReportsToAdmin() {
         timesheets.user_slack_id = users.slack_id
     `)
 
-    let text = row.map(r=> '<@'+r.user_slack_id+ '> ```'+ r.task_details.replaceAll('\\n', '\n')+'``` ').join('\n')
-    // let text = row.map(r=> '<@'+r.user_slack_id+ '> \n'+ r.task_details.replaceAll('\\n', '\n')).join('\n')
-    await web.chat.postMessage({
-      channel: process.env.ADMIN_SLACK_IDS,
-      text,
-    })
-  // }
+  const message = row.map(r=> '<@'+r.user_slack_id+ '> ```'+ r.task_details.replaceAll('\\n', '\n')+'``` ').join('\n')
   
+  for (let user of users) {
+    await web.chat.postMessage({
+      channel: user.slack_id,
+      text: message,
+    })
+  }
 } 
 
 app.get('/send-reports', async (req, res) => {
