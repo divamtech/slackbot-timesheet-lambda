@@ -140,6 +140,7 @@ async function sendReminderWithButton() {
 
 async function handleButtonClick(res, payload) {
   if (!(await canUserSubmit(payload.user.id))) {
+    res.sendStatus(200)
     return
   }
 
