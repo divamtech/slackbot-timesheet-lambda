@@ -131,9 +131,9 @@ async function sendReminderWithButton() {
           },
         ],
       })
-      console.log(`Reminder sent to user ${userId}`)
+      console.log(`Reminder sent to user ${user.slack_id}`)
     } catch (error) {
-      console.error(`Error sending reminder to user ${userId}:`, error)
+      console.error(`Error sending reminder to user ${user.slack_id}:`, error)
     }
   }
 }
