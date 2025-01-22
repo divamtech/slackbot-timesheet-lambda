@@ -206,7 +206,7 @@ async function handleModalResponse(res, payload) {
     res.send({ response_action: 'clear' }) // Clears the modal
     await web.chat.postMessage({
       channel: payload.user.id,
-      text: `Thank you for submitting your timesheet! [id: ${row[0].id}, time: ${row[0].created_at}]`,
+      text: `Thank you for submitting your timesheet! [id: ${row[0].id}, time: ${convertToKolkataTimezone(row[0].created_at)}]`,
     })
   } catch (error) {
     console.error('Error handling timesheet submission:', error)
@@ -239,11 +239,16 @@ async function canUserSubmit(userSlackId) {
   if (row.length > 0) {
     await web.chat.postMessage({
       channel: userSlackId,
-      text: `You already filled the timesheet, thankyou! [id: ${row[0].id}, time: ${row[0].created_at}]`,
+      text: `You already filled the timesheet, thankyou! [id: ${row[0].id}, time: ${convertToKolkataTimezone(row[0].created_at)}]`,
     })
     return false
   }
   return true
+}
+
+function convertToKolkataTimezone(createdAt) {
+  const kolkataTime = DateTime.fromISO(createdAt, { zone: 'utc' }).setZone('Asia/Kolkata')
+  return kolkataTime.toString() // Returns ISO 8601 formatted string in Asia/Kolkata timezone
 }
 
 // Start the server
