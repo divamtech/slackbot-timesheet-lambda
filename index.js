@@ -246,10 +246,10 @@ async function canUserSubmit(userSlackId) {
   return true
 }
 
-const { DateTime } = require('luxon')
+const moment = require('moment-timezone')
 function convertToKolkataTimezone(createdAt) {
-  const kolkataTime = DateTime.fromISO(createdAt, { zone: 'utc' }).setZone('Asia/Kolkata')
-  return kolkataTime.toString() // Returns ISO 8601 formatted string in Asia/Kolkata timezone
+  console.log('createdAt', createdAt)
+  return moment.utc(createdAt).tz('Asia/Kolkata').format('YYYY-MM-DD HH:mm:ss')
 }
 
 // Start the server
