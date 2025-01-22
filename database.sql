@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS `users` (
   `email` char(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci DEFAULT NULL,
   `slack_id` char(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL,
   `is_active` tinyint(1) NOT NULL DEFAULT '1',
+  `is_admin` tinyint(1) NOT NULL DEFAULT '0',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `slack_id` (`slack_id`)
