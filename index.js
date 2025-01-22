@@ -21,21 +21,10 @@ const web = new WebClient(process.env.SLACK_BOT_TOKEN)
 app.use(bodyParser.urlencoded({ extended: true }))
 app.use(bodyParser.json())
 
-// Endpoint to trigger reminders
+// Endpoint
 app.get('/send-reminders', async (req, res) => {
   try {
-    //TODO: fetch active users from database whom timesheets are not yet submitted for today based on created_at column at timesheets table.
-    const [definedUsers] = await db.query(`
-    SELECT users.* 
-    FROM users
-    LEFT JOIN timesheets t 
-    ON users.slack_id = t.user_slack_id AND DATE(t.created_at) = CURDATE()
-    WHERE users.is_active = 1
-`)
-
-    for (const user of definedUsers) {
-      await sendReminderWithButton(user.slack_id)
-    }
+    await sendReminderWithButton()
     res.send('Reminders sent successfully!')
   } catch (error) {
     console.error('Error sending reminders:', error)
@@ -81,41 +70,6 @@ app.get('/sync-users', async (req, res) => {
   }
 })
 
-async function sendReminderWithButton(userId) {
-  try {
-    await web.chat.postMessage({
-      channel: userId,
-      text: 'Please fill out your timesheet!',
-      blocks: [
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: 'Hi, please fill out your daily task details by clicking the button below:',
-          },
-        },
-        {
-          type: 'actions',
-          elements: [
-            {
-              type: 'button',
-              text: {
-                type: 'plain_text',
-                text: 'Fill Timesheet',
-                emoji: true,
-              },
-              action_id: 'open_timesheet_modal', // Action triggers the modal
-            },
-          ],
-        },
-      ],
-    })
-    console.log(`Reminder sent to user ${userId}`)
-  } catch (error) {
-    console.error(`Error sending reminder to user ${userId}:`, error)
-  }
-}
-
 // Endpoint to handle Slack interactions
 app.post('/slack/interactions', async (req, res) => {
   const payload = JSON.parse(req.body.payload)
@@ -136,8 +90,59 @@ app.post('/slack/interactions', async (req, res) => {
   }
 })
 
+//handlers
+async function sendReminderWithButton() {
+  const [definedUsers] = await db.query(`
+        SELECT DISTINCT users.* FROM users
+        WHERE users.is_active = 1
+        AND users.slack_id NOT IN (
+            SELECT t.user_slack_id
+            FROM timesheets t
+            WHERE DATE(t.created_at) = CURDATE()
+        )
+      `)
+
+  for (const user of definedUsers) {
+    try {
+      await web.chat.postMessage({
+        channel: user.slack_id,
+        text: 'Please fill out your timesheet!',
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: 'Hi, please fill out your daily task details by clicking the button below:',
+            },
+          },
+          {
+            type: 'actions',
+            elements: [
+              {
+                type: 'button',
+                text: {
+                  type: 'plain_text',
+                  text: 'Fill Timesheet',
+                  emoji: true,
+                },
+                action_id: 'open_timesheet_modal', // Action triggers the modal
+              },
+            ],
+          },
+        ],
+      })
+      console.log(`Reminder sent to user ${userId}`)
+    } catch (error) {
+      console.error(`Error sending reminder to user ${userId}:`, error)
+    }
+  }
+}
+
 async function handleButtonClick(res, payload) {
-  //TODO: check user has already submitted the response if no then handle else return the error.
+  if (!(await canUserSubmit(payload.user.id))) {
+    return
+  }
+
   try {
     await web.views.open({
       trigger_id: payload.trigger_id,
@@ -177,7 +182,10 @@ async function handleButtonClick(res, payload) {
 }
 
 async function handleModalResponse(res, payload) {
-  //TODO: check user has already submitted the response if no then handle else return the error.
+  if (!(await canUserSubmit(payload.user.id))) {
+    res.send({ response_action: 'clear' }) // Clears the modal
+    return
+  }
 
   const userInput = payload.view.state.values.timesheet_details.input_timesheet.value
 
@@ -205,16 +213,57 @@ async function handleModalResponse(res, payload) {
   }
 }
 
+async function canUserSubmit(userSlackId) {
+  if (new Date().getHours() >= 20) {
+    await web.chat.postMessage({
+      channel: userSlackId,
+      text: 'You cannot fill the timesheet, time exceeded, you can fill this till 8PM!',
+    })
+    return false
+  }
+
+  const [row] = await db.query(
+    `
+    SELECT timesheets.*
+      FROM timesheets
+      INNER JOIN users
+      ON users.slack_id = timesheets.user_slack_id
+      WHERE users.is_active = 1 
+      AND timesheets.user_slack_id = ?
+      AND DATE(timesheets.created_at) = CURDATE();
+`,
+    [userSlackId],
+  )
+
+  if (row.length > 0) {
+    await web.chat.postMessage({
+      channel: userSlackId,
+      text: `You already filled the timesheet, thankyou! [id: ${row[0].id}, time: ${row[0].created_at}]`,
+    })
+    return false
+  }
+  return true
+}
+
 // Start the server
 app.listen(port, () => {
   console.log(`Slack app listening at http://localhost:${port}`)
 })
 
-//lambda handling
-const serverless = require('serverless-http')
-const handler = serverless(app)
+//RUNNING the main engine.
+if (process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  //lambda handling
+  const serverless = require('serverless-http')
+  const handler = serverless(app)
 
-exports.handler = async (event, context, callback) => {
-  const response = handler(event, context, callback)
-  return response
+  exports.handler = async (event, context, callback) => {
+    const response = handler(event, context, callback)
+    return response
+  }
+} else {
+  // Run the cron job
+  const cron = require('node-cron')
+  cron.schedule('30 18 * * 1-5', sendReminderWithButton, { timezone: 'Asia/Kolkata' }) //6:30PM
+  cron.schedule('45 18 * * 1-5', sendReminderWithButton, { timezone: 'Asia/Kolkata' }) //6:45PM
+  cron.schedule('0 19 * * 1-5', sendReminderWithButton, { timezone: 'Asia/Kolkata' }) //7:00PM
 }
