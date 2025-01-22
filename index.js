@@ -1,10 +1,18 @@
 const express = require('express')
 require('dotenv').config()
 const bodyParser = require('body-parser')
+const mysql = require('mysql2/promise')
 const { WebClient } = require('@slack/web-api')
 
 const app = express()
 const port = process.env.PORT || 3000
+
+const db = mysql.createPool({
+  host: process.env.MYSQL_HOST,
+  user: process.env.MYSQL_USER,
+  password: process.env.MYSQL_PASSWORD,
+  database: process.env.MYSQL_NAME,
+})
 
 // Slack Web API Client
 const web = new WebClient(process.env.SLACK_BOT_TOKEN)
@@ -13,26 +21,63 @@ const web = new WebClient(process.env.SLACK_BOT_TOKEN)
 app.use(bodyParser.urlencoded({ extended: true }))
 app.use(bodyParser.json())
 
-// Define users for reminders, fetch this from database
-const definedUsers = [
-  {
-    email: 'sonuy0199@gmail.com',
-    name: 'Sonu Yadav',
-    id: 'U07ALUCLESH',
-  },
-]
-
 // Endpoint to trigger reminders
 app.get('/send-reminders', async (req, res) => {
   try {
-    //TODO: fetch active users from database whom timesheets are not yet submitted.
+    //TODO: fetch active users from database whom timesheets are not yet submitted for today based on created_at column at timesheets table.
+    const [definedUsers] = await db.query(`
+    SELECT users.* 
+    FROM users
+    LEFT JOIN timesheets t 
+    ON users.slack_id = t.user_slack_id AND DATE(t.created_at) = CURDATE()
+    WHERE users.is_active = 1
+`)
+
     for (const user of definedUsers) {
-      await sendReminderWithButton(user.id)
+      await sendReminderWithButton(user.slack_id)
     }
     res.send('Reminders sent successfully!')
   } catch (error) {
     console.error('Error sending reminders:', error)
     res.status(500).send('Failed to send reminders')
+  }
+})
+
+app.get('/sync-users', async (req, res) => {
+  try {
+    const response = await web.users.list()
+    console.log('response---------------------', response)
+    const users = response.members.filter((user) => !user.is_bot && !user.deleted)
+
+    const [rows] = await db.query('SELECT * FROM users')
+    //save to database
+
+    const newUsers = users
+      .filter((user) => {
+        if (user.id == 'USLACKBOT') {
+          return false
+        } else if (rows.some((u) => u.slack_id == user.id)) {
+          return false
+        }
+        return true
+      })
+      .map((user) => ({
+        email: user.name,
+        name: user.real_name,
+        slack_id: user.id,
+        is_active: false,
+      }))
+
+    //insert new users into db
+    if (newUsers.length > 0) {
+      const values = newUsers.map((user) => [user.email, user.name, user.slack_id, user.is_active])
+      await db.query('INSERT INTO users (email, name, slack_id, is_active) VALUES ?', [values])
+    }
+
+    res.send('Users synced')
+  } catch (error) {
+    console.error('Error sync users:', error)
+    res.status(500).send('Failed to sync users: ' + JSON.stringify(error))
   }
 })
 
@@ -138,26 +183,21 @@ async function handleModalResponse(res, payload) {
 
   // Simulating posting to an endpoint
   try {
-    //TODO: save details into the db
     console.log(`Timesheet input from user ${payload.user.id}:`, userInput)
     console.log('Payload:', {
       user: payload.user.id,
       timesheet: userInput,
     })
 
-    // await fetch('https://inbound.divamtech.com/webhooks/blank', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify({
-    //     payload,
-    //     user: payload.user.id,
-    //     timesheet: userInput,
-    //   }),
-    // })
+    // insert data into timesheet table, get the column with created_at date
+    const [result] = await db.query('INSERT INTO timesheets (user_slack_id, task_details) VALUES (?, ?)', [payload.user.id, userInput])
+    const [row] = await db.query('SELECT * FROM timesheets WHERE id = ?', [result.insertId])
+
+    console.log('Row inserted:', row)
     res.send({ response_action: 'clear' }) // Clears the modal
     await web.chat.postMessage({
       channel: payload.user.id,
-      text: 'Thank you for submitting your timesheet!', //TODO: add the created_at which we stored on saved row
+      text: `Thank you for submitting your timesheet! [id: ${row[0].id}, time: ${row[0].created_at}]`,
     })
   } catch (error) {
     console.error('Error handling timesheet submission:', error)

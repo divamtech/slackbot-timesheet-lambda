@@ -21,7 +21,6 @@ CREATE TABLE IF NOT EXISTS `timesheets` (
   `id` int unsigned NOT NULL AUTO_INCREMENT,
   `user_slack_id` char(100) CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci NOT NULL,
   `task_details` text,
-  `filled_status` tinyint(1) DEFAULT '0',
   `created_at` timestamp NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   KEY `fk_timesheets_user_slack_id` (`user_slack_id`),
