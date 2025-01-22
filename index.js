@@ -214,6 +214,40 @@ async function handleModalResponse(res, payload) {
   }
 }
 
+async function sendAllUserSheets() {
+  const [row] = await db.query
+    (`
+      SELECT 
+        timesheets.*, 
+        users.name as user_name
+      FROM 
+        timesheets
+      INNER JOIN 
+        users 
+      ON 
+        timesheets.user_slack_id = users.slack_id
+    `)
+
+  let text = ''
+  row.forEach(e=>{
+    text += `User ${e.user_name} (Slack ID: ${e.user_slack_id}) worked on the task '${e.task_details}' at ${convertToKolkataTimezone(e.created_at)}.\n`
+  })
+  await web.chat.postMessage({
+    channel: process.env.ADMIN_SLACK_IDS,
+    text,
+  })
+} 
+
+app.get('/send-sheets', async (req, res) => {
+  try {
+    await sendAllUserSheets()
+    res.send('Users Sheets sent successfully!')
+  } catch (error) {
+    console.error('user sheet sending error:', error)
+    res.status(500).send('Slack Failed to send user sheets')
+  }
+})
+
 async function canUserSubmit(userSlackId) {
   if (new Date().getHours() >= 20) {
     await web.chat.postMessage({
@@ -273,4 +307,5 @@ if (process.env.AWS_LAMBDA_FUNCTION_NAME) {
   cron.schedule('30 18 * * 1-5', sendReminderWithButton, { timezone: 'Asia/Kolkata' }) //6:30PM
   cron.schedule('45 18 * * 1-5', sendReminderWithButton, { timezone: 'Asia/Kolkata' }) //6:45PM
   cron.schedule('0 19 * * 1-5', sendReminderWithButton, { timezone: 'Asia/Kolkata' }) //7:00PM
+  cron.schedule('1 20 * * 1-5', sendAllUserSheets, { timezone: 'Asia/Kolkata' }) //8:00PM
 }
