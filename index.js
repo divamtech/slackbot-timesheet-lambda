@@ -208,6 +208,7 @@ async function handleModalResponse(res, payload) {
       channel: payload.user.id,
       text: `Thank you for submitting your timesheet! [id: ${row[0].id}, time: ${convertToKolkataTimezone(row[0].created_at)}]`,
     })
+    await sendMessageToUser(payload.user.id,row[0].task_details)
   } catch (error) {
     console.error('Error handling timesheet submission:', error)
     res.status(500).send('Failed to handle timesheet submission')
@@ -279,11 +280,27 @@ async function canUserSubmit(userSlackId) {
   if (row.length > 0) {
     await web.chat.postMessage({
       channel: userSlackId,
-      text: `You already filled the timesheet, thankyou! [id: ${row[0].id}, time: ${convertToKolkataTimezone(row[0].created_at)}]`,
+      text: `You already filled the timesheet, thankyou! [id: ${row[0].id}, time: ${convertToKolkataTimezone(row[0].created_at)}]\n And Your Message Is *${row[0].task_details}* `,
     })
     return false
   }
   return true
+}
+
+async function sendMessageToUser( userSlackId, taskDetails) {
+  try {
+    const dmChannelResponse = await web.conversations.open({
+      users: userSlackId,
+    });
+    const dmChannelId = dmChannelResponse.channel.id;
+
+    await web.chat.postMessage({
+      channel: dmChannelId, 
+      text: `Your Message Is : *${taskDetails}*`,
+    });
+  } catch (error) {
+    console.error('Error', error.data || error.message);
+  }
 }
 
 const moment = require('moment-timezone')
