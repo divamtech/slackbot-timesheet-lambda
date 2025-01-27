@@ -206,9 +206,10 @@ async function handleModalResponse(res, payload) {
     res.send({ response_action: 'clear' }) // Clears the modal
     await web.chat.postMessage({
       channel: payload.user.id,
-      text: `Thank you for submitting your timesheet! [id: ${row[0].id}, time: ${convertToKolkataTimezone(row[0].created_at)}]`,
+      text: `Thank you for submitting your timesheet! [id: ${row[0].id}, time: ${convertToKolkataTimezone(
+        row[0].created_at,
+      )}] And Your message is: \`\`\`${row[0].task_details}\`\`\``,
     })
-    await sendMessageToUser(payload.user.id,row[0].task_details)
   } catch (error) {
     console.error('Error handling timesheet submission:', error)
     res.status(500).send('Failed to handle timesheet submission')
@@ -216,34 +217,43 @@ async function handleModalResponse(res, payload) {
 }
 
 async function sendUserReportsToAdmin() {
-  const [users] = await db.query(`select * from users where is_active = true and is_admin = true`)
+  const [users] = await db.query(`select * from users where is_admin = true`)
 
   if (users.length == 0) {
     return
   }
-  
-  const [row] = await db.query
-    (`
+  const [row] = await db.query(`
       SELECT 
-        timesheets.*, 
-        users.name as user_name
-      FROM 
-        timesheets
-      INNER JOIN 
-        users 
+        users.*,
+        timesheets.id AS timesheet_id,
+        timesheets.task_details,
+        timesheets.created_at AS timesheet_created_at
+      FROM users
+      LEFT JOIN timesheets 
       ON 
-        timesheets.user_slack_id = users.slack_id
+          users.slack_id = timesheets.user_slack_id 
+          AND DATE(timesheets.created_at) = CURDATE()
+      WHERE 
+          users.is_active = 1
     `)
 
-  const message = row.map(r=> '<@'+r.user_slack_id+ '> ```'+ r.task_details.replaceAll('\\n', '\n')+'``` ').join('\n')
-  
+  const message = row
+    .map((r) => {
+      if (r.task_details) {
+        return '<@' + r.slack_id + '> ```' + r.task_details?.replaceAll('\\n', '\n') + '``` '
+      } else {
+        return '<@' + r.slack_id + '> `NOT FILLED TODAY`'
+      }
+    })
+    .join('\n')
+
   for (let user of users) {
     await web.chat.postMessage({
       channel: user.slack_id,
       text: message,
     })
   }
-} 
+}
 
 app.get('/send-reports', async (req, res) => {
   try {
@@ -280,27 +290,13 @@ async function canUserSubmit(userSlackId) {
   if (row.length > 0) {
     await web.chat.postMessage({
       channel: userSlackId,
-      text: `You already filled the timesheet, thankyou! [id: ${row[0].id}, time: ${convertToKolkataTimezone(row[0].created_at)}]\n And Your Message Is *${row[0].task_details}* `,
+      text: `You already filled the timesheet, thankyou! [id: ${row[0].id}, time: ${convertToKolkataTimezone(
+        row[0].created_at,
+      )}]\n And Your message is: \`\`\`${row[0].task_details}\`\`\``,
     })
     return false
   }
   return true
-}
-
-async function sendMessageToUser( userSlackId, taskDetails) {
-  try {
-    const dmChannelResponse = await web.conversations.open({
-      users: userSlackId,
-    });
-    const dmChannelId = dmChannelResponse.channel.id;
-
-    await web.chat.postMessage({
-      channel: dmChannelId, 
-      text: `Your Message Is : *${taskDetails}*`,
-    });
-  } catch (error) {
-    console.error('Error', error.data || error.message);
-  }
 }
 
 const moment = require('moment-timezone')
