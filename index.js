@@ -266,10 +266,10 @@ app.get('/send-reports', async (req, res) => {
 })
 
 async function canUserSubmit(userSlackId) {
-  if (new Date().getHours() >= 20) {
+  if (new Date().getHours() >= 21) {
     await web.chat.postMessage({
       channel: userSlackId,
-      text: 'You cannot fill the timesheet, time exceeded, you can fill this till 8PM!',
+      text: 'You cannot fill the timesheet, time exceeded, you can fill this till 9PM!',
     })
     return false
   }
@@ -326,5 +326,6 @@ if (process.env.AWS_LAMBDA_FUNCTION_NAME) {
   cron.schedule('30 18 * * 1-5', sendReminderWithButton, { timezone: 'Asia/Kolkata' }) //6:30PM
   cron.schedule('45 18 * * 1-5', sendReminderWithButton, { timezone: 'Asia/Kolkata' }) //6:45PM
   cron.schedule('0 19 * * 1-5', sendReminderWithButton, { timezone: 'Asia/Kolkata' }) //7:00PM
-  cron.schedule('1 20 * * 1-5', sendUserReportsToAdmin, { timezone: 'Asia/Kolkata' }) //8:00PM
+  cron.schedule('0 20 * * 1-5', sendReminderWithButton, { timezone: 'Asia/Kolkata' }) //8:00PM
+  cron.schedule('1 21 * * 1-5', sendUserReportsToAdmin, { timezone: 'Asia/Kolkata' }) //9:00PM
 }
