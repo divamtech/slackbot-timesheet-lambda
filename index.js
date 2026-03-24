@@ -258,6 +258,7 @@ async function sendUserReportsToAdmin() {
   }
   if(REPORT_EMAIL_TO) {
   await sendTimesheetPdfEmail(row)
+  }
 }
 
 
@@ -476,4 +477,4 @@ if (process.env.AWS_LAMBDA_FUNCTION_NAME) {
   cron.schedule('00 19 * * 1-5', sendReminderWithButton, { timezone: 'Asia/Kolkata' }) //7:00PM
   cron.schedule('00 20 * * 1-5', sendReminderWithButton, { timezone: 'Asia/Kolkata' }) //8:00PM
   cron.schedule('1 22 * * 1-5', sendUserReportsToAdmin, { timezone: 'Asia/Kolkata' }) //10:01PM
-}}
+}
