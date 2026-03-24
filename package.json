@@ -12,6 +12,8 @@
     "moment-timezone": "^0.5.46",
     "mysql2": "^3.12.0",
     "node-cron": "^3.0.3",
+    "nodemailer": "^8.0.3",
+    "pdfkit": "^0.18.0",
     "serverless-http": "^3.2.0"
   },
   "devDependencies": {

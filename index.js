@@ -3,6 +3,8 @@ require('dotenv').config()
 const bodyParser = require('body-parser')
 const mysql = require('mysql2/promise')
 const { WebClient } = require('@slack/web-api')
+const nodemailer = require('nodemailer')
+const PDFDocument = require('pdfkit')
 
 const app = express()
 const port = process.env.PORT || 3000
@@ -16,6 +18,7 @@ const db = mysql.createPool({
 
 // Slack Web API Client
 const web = new WebClient(process.env.SLACK_BOT_TOKEN)
+const REPORT_EMAIL_TO = process.env.REPORT_EMAIL_TO || 'arpitkhameshara164@gmail.com'
 
 // Middleware
 app.use(bodyParser.urlencoded({ extended: true }))
@@ -223,13 +226,13 @@ async function sendUserReportsToAdmin() {
     return
   }
   const [row] = await db.query(`
-      SELECT 
-        users.*,
-        timesheets.id AS timesheet_id,
-        timesheets.task_details,
-        timesheets.created_at AS timesheet_created_at
-      FROM users
-      LEFT JOIN timesheets 
+    SELECT 
+      users.*,
+      timesheets.id AS timesheet_id,
+      timesheets.task_details,
+      timesheets.created_at AS timesheet_created_at
+    FROM users
+    LEFT JOIN timesheets 
       ON 
           users.slack_id = timesheets.user_slack_id 
           AND DATE(timesheets.created_at) = CURDATE()
@@ -253,6 +256,152 @@ async function sendUserReportsToAdmin() {
       text: message,
     })
   }
+
+  await sendTimesheetPdfEmail(row)
+}
+
+
+async function buildTimesheetPdfBuffer(rows) {
+  return new Promise((resolve, reject) => {
+    const doc = new PDFDocument({ margin: 40, size: 'A4' })
+
+    const buffers = []
+    doc.on('data', buffers.push.bind(buffers))
+    doc.on('end', () => resolve(Buffer.concat(buffers)))
+    doc.on('error', reject)
+
+    // Title
+    doc
+      .fontSize(18)
+      .fillColor('black')
+      .font('Helvetica-Bold')
+      .text(`Daily Timesheet Report - ${moment().tz('Asia/Kolkata').format('DD/MM/YYYY')}`, { align: 'center' })
+      .moveDown(1.5)
+
+    const startX = 50
+    let startY = doc.y
+    const pageHeight = doc.page.height - 50
+
+    const col1Width = 180
+    const col2Width = 330
+    const padding = 10
+
+    // Header
+    doc.fontSize(12).font('Helvetica-Bold')
+
+    doc.fillColor('#e6e6e6')
+    doc.rect(startX, startY, col1Width, 30).fill()
+    doc.rect(startX + col1Width, startY, col2Width, 30).fill()
+
+    doc.fillColor('black')
+    doc.rect(startX, startY, col1Width, 30).stroke()
+    doc.rect(startX + col1Width, startY, col2Width, 30).stroke()
+
+    doc.text('Name', startX + padding, startY + 8)
+    doc.text('Task Details', startX + col1Width + padding, startY + 8)
+
+    startY += 30
+
+    doc.font('Helvetica')
+
+    rows.forEach((row, index) => {
+      const name = row.name || row.username || 'N/A'
+      const task = row.task_details || 'No update'
+
+      const nameHeight = doc.heightOfString(name, {
+        width: col1Width - padding * 2,
+      })
+
+      const taskHeight = doc.heightOfString(task, {
+        width: col2Width - padding * 2,
+      })
+
+      const rowHeight = Math.max(nameHeight, taskHeight) + padding * 2
+
+      // Page break BEFORE drawing
+      if (startY + rowHeight > pageHeight) {
+        doc.addPage()
+        startY = 50
+
+        // redraw header
+        doc.font('Helvetica-Bold')
+        doc.fillColor('#e6e6e6')
+        doc.rect(startX, startY, col1Width, 30).fill()
+        doc.rect(startX + col1Width, startY, col2Width, 30).fill()
+
+        doc.fillColor('black')
+        doc.rect(startX, startY, col1Width, 30).stroke()
+        doc.rect(startX + col1Width, startY, col2Width, 30).stroke()
+
+        doc.text('Name', startX + padding, startY + 8)
+        doc.text('Task Details', startX + col1Width + padding, startY + 8)
+
+        startY += 30
+        doc.font('Helvetica')
+      }
+
+      // Zebra row background (optional but looks 🔥)
+      if (index % 2 === 0) {
+        doc.fillColor('#fafafa')
+        doc.rect(startX, startY, col1Width + col2Width, rowHeight).fill()
+      }
+
+      // Borders
+      doc.fillColor('black')
+      doc.rect(startX, startY, col1Width, rowHeight).stroke()
+      doc.rect(startX + col1Width, startY, col2Width, rowHeight).stroke()
+
+      // Text (VERY IMPORTANT: set color again)
+      doc.fillColor('black')
+      doc.text(name, startX + padding, startY + padding, {
+        width: col1Width - padding * 2,
+      })
+
+      doc.text(task, startX + col1Width + padding, startY + padding, {
+        width: col2Width - padding * 2,
+      })
+
+      startY += rowHeight
+    })
+
+    doc.end()
+  })
+}
+
+async function sendTimesheetPdfEmail(rows) {
+  if (!process.env.SMTP_HOST || !process.env.SMTP_PORT || !process.env.SMTP_USER || !process.env.SMTP_PASS) {
+    console.log('SMTP env vars missing, skipping PDF email report.')
+    return
+  }
+
+  const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: Number(process.env.SMTP_PORT),
+    secure: Number(process.env.SMTP_PORT) === 465,
+    auth: {
+      user: process.env.SMTP_USER,
+      pass: process.env.SMTP_PASS,
+    },
+  })
+
+  const pdfBuffer = await buildTimesheetPdfBuffer(rows)
+  const reportDate = moment().tz('Asia/Kolkata').format('DD/MM/YYYY')
+
+  await transporter.sendMail({
+    from: process.env.SMTP_FROM || process.env.SMTP_USER,
+    to: REPORT_EMAIL_TO,
+    subject: `Timesheet Report - ${reportDate}`,
+    text: `Please find attached the daily timesheet report for ${reportDate}.`,
+    attachments: [
+      {
+        filename: `timesheet-report-${reportDate}.pdf`,
+        content: pdfBuffer,
+        contentType: 'application/pdf',
+      },
+    ],
+  })
+
+  console.log(`Timesheet PDF emailed to ${REPORT_EMAIL_TO}`)
 }
 
 app.get('/send-reports', async (req, res) => {
