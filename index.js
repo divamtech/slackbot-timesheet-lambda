@@ -18,7 +18,7 @@ const db = mysql.createPool({
 
 // Slack Web API Client
 const web = new WebClient(process.env.SLACK_BOT_TOKEN)
-const REPORT_EMAIL_TO = process.env.REPORT_EMAIL_TO || 'arpitkhameshara164@gmail.com'
+const REPORT_EMAIL_TO = process.env.REPORT_EMAIL_TO
 
 // Middleware
 app.use(bodyParser.urlencoded({ extended: true }))
@@ -256,8 +256,9 @@ async function sendUserReportsToAdmin() {
       text: message,
     })
   }
-
-  await sendTimesheetPdfEmail(row)
+  if(REPORT_EMAIL_TO) {
+    await sendTimesheetPdfEmail(row)
+  }
 }
 
 
