@@ -109,13 +109,13 @@ async function sendReminderWithButton() {
     try {
       await web.chat.postMessage({
         channel: user.slack_id,
-        text: 'Please fill out your timesheet!',
+        text: 'Please fill out your timesheet before 09:55 PM. Anything after that will not be accepted.',
         blocks: [
           {
             type: 'section',
             text: {
               type: 'mrkdwn',
-              text: 'Hi, please fill out your daily task details by clicking the button below:',
+              text: 'Hi, please fill out your daily task details before 09:55 PM by clicking the button below:',
             },
           },
           {
@@ -257,8 +257,7 @@ async function sendUserReportsToAdmin() {
     })
   }
   if(REPORT_EMAIL_TO) {
-    await sendTimesheetPdfEmail(row)
-  }
+  await sendTimesheetPdfEmail(row)
 }
 
 
@@ -419,7 +418,7 @@ async function canUserSubmit(userSlackId) {
   if (new Date().getHours() >= 21) {
     await web.chat.postMessage({
       channel: userSlackId,
-      text: 'You cannot fill the timesheet, time exceeded, you can fill this till 9PM!',
+      text: 'You cannot fill the timesheet, time exceeded, you can fill this till 10PM!',
     })
     return false
   }
@@ -473,9 +472,8 @@ if (process.env.AWS_LAMBDA_FUNCTION_NAME) {
 } else {
   // Run the cron job
   const cron = require('node-cron')
-  cron.schedule('30 18 * * 1-5', sendReminderWithButton, { timezone: 'Asia/Kolkata' }) //6:30PM
-  cron.schedule('45 18 * * 1-5', sendReminderWithButton, { timezone: 'Asia/Kolkata' }) //6:45PM
-  cron.schedule('0 19 * * 1-5', sendReminderWithButton, { timezone: 'Asia/Kolkata' }) //7:00PM
-  cron.schedule('0 20 * * 1-5', sendReminderWithButton, { timezone: 'Asia/Kolkata' }) //8:00PM
-  cron.schedule('1 21 * * 1-5', sendUserReportsToAdmin, { timezone: 'Asia/Kolkata' }) //9:00PM
-}
+  cron.schedule('00 18 * * 1-5', sendReminderWithButton, { timezone: 'Asia/Kolkata' }) //6:00PM
+  cron.schedule('00 19 * * 1-5', sendReminderWithButton, { timezone: 'Asia/Kolkata' }) //7:00PM
+  cron.schedule('00 20 * * 1-5', sendReminderWithButton, { timezone: 'Asia/Kolkata' }) //8:00PM
+  cron.schedule('1 22 * * 1-5', sendUserReportsToAdmin, { timezone: 'Asia/Kolkata' }) //10:01PM
+}}
